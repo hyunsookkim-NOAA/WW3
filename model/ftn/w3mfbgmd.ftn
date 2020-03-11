@@ -1,0 +1,596 @@
+!/ ------------------------------------------------------------------- /
+      MODULE W3MFBGMD
+!/
+!/                  +-----------------------------------+
+!/                  | WAVEWATCH III           NOAA/NCEP |
+!/                  |           H. L. Tolman            |
+!/                  |                        FORTRAN 90 |
+!/                  | Last update :         29-May-2009 |
+!/                  +-----------------------------------+
+!/
+!/    03-Aug-2012 : Original version constructed.
+!/
+!/    Copyright 2009 National Weather Service (NWS),
+!/       National Oceanic and Atmospheric Administration.  All rights
+!/       reserved.  WAVEWATCH III is a trademark of the NWS.
+!/       No unauthorized use without permission.
+!/
+!  1. Purpose :
+!
+!     Calculates the X (east) and Y (north) momentum carried by waves
+!        as well as X-flux of X and Y momentum and the Y-flux of X
+!        and Y momentum.
+!
+!  2. Variables and types :
+!
+!      Name      Type  Scope    Description
+!     ----------------------------------------------------------------
+!     ----------------------------------------------------------------
+!
+!  3. Subroutines and functions :
+!
+!      Name      Type  Scope    Description
+!     ----------------------------------------------------------------
+!      W3MFBG    Subr. Public   User supplied source term.
+!     ----------------------------------------------------------------
+!
+!  4. Subroutines and functions used :
+!
+!      Name      Type  Module   Description
+!     ----------------------------------------------------------------
+!     ----------------------------------------------------------------
+!
+!  5. Remarks :
+!
+!     Calculations performed following Fan et al. 2010
+!
+!  6. Switches :
+!
+!
+!  7. Source code :
+!/
+!/ ------------------------------------------------------------------- /
+!/
+!
+      PUBLIC
+!/
+      CONTAINS
+      SUBROUTINE W3MFBG(SPEC,FPI,WNDX,WNDY,UST,MX_1,MY_1,MFXX1,MFXY1,&
+           MFYX1,MFYY1,EFX1,EFY1,ENER1,EFA1,HS1,WL1,hml,lastkx,lastky)
+!/
+!/                  +-----------------------------------+
+!/                  | WAVEWATCH III           NOAA/NCEP |
+!/                  |           H. L. Tolman            |
+!/                  |                        FORTRAN 90 |
+!/                  | Last update :         23-Jun-2006 |
+!/                  +-----------------------------------+
+!/
+!/    03-Aug-2012: Original Implementation
+!/
+!  1. Purpose :
+!
+!     Calculate momentum and momentum flux terms for budget
+!        calculation
+!
+!  2. Method :
+!
+!     Following Fan et al. (2010)
+!
+!  3. Parameters :
+!
+!     Parameter list
+!     ----------------------------------------------------------------
+!      SPEC      I    1-D wave action spectrum
+!      FPI       I    Peak input freq
+!      MX        O    X-momentum
+!      MY        O    Y-momentum
+!      MFXX      O    X-flux of X-momentum
+!      MFXY      O    X-flux of Y-momentum
+!      MFYX      O    Y-flux of X-momentum
+!      MFYY      O    Y-flux of Y-momentum
+!     ----------------------------------------------------------------
+!
+!  4. Subroutines used :
+!
+!      Name      Type  Module   Description
+!     ----------------------------------------------------------------
+!     ----------------------------------------------------------------
+!
+!  5. Called by :
+!
+!      Name      Type  Module   Description
+!     ----------------------------------------------------------------
+!      W3SRCE    Subr. W3SRCEMD Source term integration.
+!     ----------------------------------------------------------------
+!
+!  6. Error messages :
+!
+!	None.
+!
+!  7. Remarks :
+!
+!  8. Structure :
+!
+!     See source code.
+!
+!  9. Switches :
+!
+!     !/S  Enable subroutine tracing.
+!
+! 10. Source code :
+!
+!/ ------------------------------------------------------------------- /
+      USE CONSTANTS
+      USE W3GDATMD, ONLY: NK, NTH, SIG, TH, FR1, XFR, DTH
+      USE W3FLD1MD, ONLY: APPENDTAIL, SIG2WN
+!/
+      IMPLICIT NONE 
+!/
+!/ ------------------------------------------------------------------- /
+!/ Parameter list
+!/
+      REAL, INTENT(IN)        :: SPEC(NK*NTH),FPI,WNDX,WNDY,UST,HML
+      REAL, INTENT(OUT)       :: MX_1, MY_1, MFXX1, MFXY1, MFYX1, MFYY1,&
+                                 EFX1, EFY1, ENER1, EFA1, HS1, WL1,     &
+                                 LaStkX,LaStkY
+!/
+!/ ------------------------------------------------------------------- /
+!/ Local parameters
+!/
+      REAL, PARAMETER         ::  CBETA = 32.0
+      REAL, PARAMETER         ::  CTHETA = 3.0*PI/8.0
+      INTEGER                 ::  I, J, K, T, NCUT
+      REAL                    :: FXX, FYX, FYY, FXY, FX, FY, F
+      REAL                    :: KMAX, KTAILA, KTAILB,KTAILC
+      INTEGER                 :: NKT, KA1, KA2, KA3
+      REAL                    :: U10DG, U10D,UOC,TH4(NTH),EFAI
+      REAL                    :: BETAX, BETAY
+      INTEGER                 :: NUMWD,MODWD
+      REAL                    :: SAT,wnd,FAC
+      REAL                    :: SURFDPTH,SPCDTH,COSSPCDTH,SINSPCDTH
+      REAL, ALLOCATABLE, DIMENSION(:) :: WN, SIG2,G_FXX,G_FYX,G_F,&
+                                         G_FYY,G_FXY,G_FY,G_FX,SPCK,&
+                                         DWNFAC
+      REAL, ALLOCATABLE, DIMENSION(:,:) :: SPC
+! 1.  Attach Tail ---------------------------------------------------- *
+!
+      wnd=sqrt(wndy**2+wndx**2)
+      SAT=0.006
+      U10D=ATAN2(WNDY,WNDX)
+      KMAX = SIG( NK )**2 / GRAV
+      NKT = NK
+      DO WHILE ( KMAX .LT. 366.0 )
+        NKT = NKT + 1
+        KMAX = ( KMAX * XFR**2 )
+      ENDDO
+      ALLOCATE( WN(NKT),SIG2(NKT),SPC(NKT,NTH),G_FXX(NKT),G_FYX(NKT),&
+                G_FYY(NKT),G_FXY(NKT),G_FY(NKT),G_FX(NKT),SPCK(NKT),&
+                G_F(NKT),DWNFAC(NKT))
+!
+! 1a. Build Discrete Wavenumbers for defining extended spectrum on---- *
+!
+      DO K = 1, NKT
+        SIG2(K) = FR1 * XFR**(K-1) * TPI
+        WN(K) = SIG2(K)**2 / GRAV
+       ENDDO
+!
+! 1b. Attach initial tail--------------------------------------------- *
+!
+      I=0
+      DO K=1, NK
+        DO T=1, NTH
+          I = I + 1
+          SPC(K,T) = SPEC(I)  * SIG(K)
+        ENDDO
+      ENDDO
+      DO K=NK+1, NKT
+        DO T=1, NTH
+          SPC(K,T)=SPC(NK,T)*WN(NK)**3/WN(K)**(3.0)
+        ENDDO
+      ENDDO
+!
+! 3. Calculate reduced tail
+!
+!-----Wavenumber for beginning of (spectrum level) transition to tail- *
+      KTAILA = ( FPI * TPI * 1.25 )**2 / GRAV
+!-----Wavenumber for end of (spectrum level) transition to tail------- *
+      KTAILB = ( FPI * TPI * 3.00 )**2 / GRAV
+!-----Wavenumber for end of (spectrum direction) transition to tail--- *
+      KTAILC=KTAILB*2.0
+      KA1 = 2     ! Do not modify 1st wavenumber bin
+      DO WHILE ( ( KTAILA .GE. WN(KA1) ) .AND. (KA1 .LT. NKT-6) )
+        KA1 = KA1 + 1
+      ENDDO
+      KA2 = KA1 + 2
+      DO WHILE ( ( KTAILB .GE. WN(KA2) ) .AND. (KA2 .LT. NKT-4) )
+        KA2 = KA2 + 1
+      ENDDO
+      KA3 = KA2 + 2
+      DO WHILE ( ( KTAILC .GE. WN(KA3)) .AND. (KA3 .LT. NKT-2) )
+        KA3 = KA3 + 1
+      ENDDO
+      !CALL APPENDTAIL(SPC,WN, NKT, KA1, KA2, KA3,&
+      !                  ATAN2(WNDY,WNDX),SAT)
+!
+! 2a. Calculate peak momentum and momentum flux and MSS
+!
+      HS1=0.0
+      WL1=0.0
+      LASTKX=0.0
+      LASTKY=0.0
+      DO J=1,NKT
+         DWNFAC(J) = (XFR**2-1./XFR**2)*0.5 &
+              * SQRT(GRAV)*WN(J)**(3./2.)
+      ENDDO
+      SPCK = 0.0
+      DO J=1, NKT
+         FXX=0.0
+         FYX=0.0
+         FYY=0.0
+         FXY=0.0
+         FX=0.0
+         FY=0.0
+         F=0.0
+         SURFDPTH = max(1.0,HML*0.2)
+         DO I=1, NTH
+            SPCDTH = SPC(J,I) * DTH
+            COSSPCDTH = COS(TH(I)) * SPCDTH
+            SINSPCDTH = SIN(TH(I)) * SPCDTH
+            F = F + SPCDTH
+            FYY=FYY+SIN(TH(I))*SINSPCDTH
+            FXY=FXY+COS(TH(I))*SINSPCDTH
+            FXX=FXX+COS(TH(I))*COSSPCDTH
+            FYX=FYX+SIN(TH(I))*COSSPCDTH
+            FY=FY+SINSPCDTH
+            FX=FX+COSSPCDTH
+            SPCK(J) = SPCK(J) + SPCDTH
+            if (2.*3.1415/WN(J) .gt. 1.0) then
+               FAC = (1.0 - EXP(2.*WN(J) * -SURFDPTH)) * DWNFAC(J)
+               LASTKX = LASTKX + COSSPCDTH*FAC
+               LASTKY = LASTKY + SINSPCDTH*FAC
+            endif
+         ENDDO
+         G_F(J) = F
+         G_FYY(J) = FYY
+         G_FXY(J) = FXY
+         G_FXX(J) = FXX
+         G_FYX(J) = FYX
+         G_FX(J) = FX
+         G_FY(J) = FY
+      ENDDO
+      LASTKX = LASTKX / SURFDPTH
+      LASTKY = LASTKY / SURFDPTH
+      MFXX1 = DWAT * G_FXX(1) * GRAV / 2.0 * (WN(2)-WN(1))
+      MFYX1 = DWAT * G_FYX(1) * GRAV / 2.0 * (WN(2)-WN(1))
+      MFYY1 = DWAT * G_FYY(1) * GRAV / 2.0 * (WN(2)-WN(1))
+      MFXY1 = DWAT * G_FXY(1) * GRAV / 2.0 * (WN(2)-WN(1))
+      MY_1 = DWAT * G_fy(1) * (SIG2(1) + SIG2(2)) &
+           / 2. * (WN(2)-WN(1))
+      MX_1 = DWAT * G_fx(1) * (SIG2(1) + SIG2(2)) &
+           / 2. * (WN(2)-WN(1))
+      EFX1 = DWAT * G_FX(1) * GRAV**2 / ( (SIG2(1) + SIG2(2))) &
+           * (WN(2)-WN(1))
+      EFY1 = DWAT * G_FY(1) * GRAV**2 / ( (SIG2(1) + SIG2(2))) &
+           * (WN(2)-WN(1))
+      ENER1 = DWAT * G_F(1) * GRAV * ( WN(2) - WN(1) )
+      HS1 = G_F(1)*( WN(2) - WN(1) ) / 2.0
+      WL1 = G_F(1)*( WN(2) - WN(1) ) / 2.0 / WN(1)
+      DO I = 2, NKT-1
+         MFXX1 = MFXX1 + DWAT * G_FXX(i) * GRAV / 2.0 * &
+              (WN(I+1)-WN(I-1)) / 2.0
+         MFYX1 = MFYX1 + DWAT * G_FYX(i) * GRAV / 2.0 * &
+              (WN(I+1)-WN(I-1)) / 2.0
+         MFYY1 = MFYY1 + DWAT * G_FYY(i) * GRAV / 2.0 * &
+              (WN(I+1)-WN(I-1)) / 2.0
+         MFXY1 = MFXY1 + DWAT * G_FXY(i) * GRAV / 2.0 * &
+              (WN(I+1)-WN(I-1)) / 2.0
+         MX_1 = MX_1 + DWAT * G_FX(I) * SIG2(I) * &
+              (WN(I+1)-WN(I-1)) / 2.0
+         MY_1 = MY_1 + DWAT * G_FY(I) * SIG2(I) * &
+              (WN(I+1)-WN(I-1)) / 2.0
+         EFX1 = EFX1 + DWAT * G_FX(I) * GRAV**2 / &
+              ( 2 * (SIG2(I)) ) * ( WN(I+1) - WN(I-1) ) / 2.0
+         EFY1 = EFY1 + DWAT * G_FY(I) * GRAV**2 / &
+              ( 2 * (SIG2(I)) ) * ( WN(I+1) - WN(I-1) ) / 2.0
+         ENER1 = ENER1 + DWAT * G_F(I) * GRAV * &
+              ( WN(I+1) - WN(I-1) ) / 2.0
+         HS1 = HS1 + G_F(I)*( WN(I+1) - WN(I-1) ) / 2.0
+         WL1 = WL1 + G_F(I)*( WN(I+1) - WN(I-1) ) / 2.0 / WN(I)
+      ENDDO
+      IF (HS1.gt.1.e-5) then
+         WL1 = WL1 / HS1 * TPI
+      else
+         WL1 = 0.0
+      endif
+      HS1 = 4.*SQRT(HS1)
+      !/ADD CALCULATION OF EFA FOR CALCULATING C_EFFECTIVE (from Flux2d.f)
+!Define EFA,NWD,UOFC,BETAX,BETAY,wdir,U10DG,NUMWD,MODWD,TH4
+! WE MAY NEED TO UPDATE SOME OF THIS, FOR THE TIME BEING I HAVE COPIED IT.
+         EFA1=0.0
+         U10DG=U10D*180./pi
+         NUMWD=U10DG/15
+         MODWD=MOD(IFIX(U10DG),15)
+         IF (MODWD.GT.7) THEN
+            NUMWD=NUMWD+1
+         ENDIF
+         NUMWD=NUMWD+1
+         DO J=1,NTH
+            TH4(J)=(FLOAT(J-NUMWD)*15.)*PI/180.
+         ENDDO
+
+         DO I=2,NK-1
+            UOC=UST*WN(I)/SIG2(I)
+            EFAI=0.0
+            DO J=1,NTH
+               BETAX=0.
+               BETAY=0.
+               IF(NUMWD.GE.7.AND.NUMWD.LE.18) THEN
+                  IF((UOC.GE.0.07).AND.(J.GE.NUMWD-6.AND.J.LE.NUMWD+6))THEN
+                     BETAX=COS(TH4(J))**(2)*COS(TH(J))
+                     BETAY=COS(TH4(J))**(2)*SIN(TH(J))
+                  ELSE
+                     BETAX=0.
+                     BETAY=0.
+                  ENDIF
+               ELSEIF(NUMWD.LT.7) THEN
+                  IF((UOC.GE.0.07).AND.(J.LE.NUMWD+6.OR.J.GE.NUMWD+18))THEN
+                     BETAX=COS(TH4(J))**(2)*COS(TH(J))
+                     BETAY=COS(TH4(J))**(2)*SIN(TH(J))
+                  ELSE
+                     BETAX=0.
+                     BETAY=0.
+                  ENDIF
+               ELSE
+                  IF((UOC.GE.0.07).AND.&
+                       (J.LE.NUMWD+6-24.OR.J.GE.NUMWD+18-24)) THEN
+                     BETAX=COS(TH4(J))**(2)*COS(TH(J))
+                     BETAY=COS(TH4(J))**(2)*SIN(TH(J))
+                  ELSE
+                     BETAX=0.
+                     BETAY=0.
+                  ENDIF
+               ENDIF
+               EFAI=EFAI+sqrt(BETAX**2+BETAY**2)*DTH&
+                    *WN(I)**2*CBETA*SPC(i,j)*DAIR*UST**2*GRAV/SIG2(I)
+            ENDDO
+            EFA1=EFA1+EFAI*( WN(I+1) - WN(I-1) ) / 2.0
+         ENDDO
+        DEALLOCATE( WN,SIG2,SPC,G_FXX,G_FYX,G_FYY,G_FXY,G_FY,G_FX,SPCK)
+        RETURN
+!/        
+      END SUBROUTINE W3MFBG
+!/
+!/
+      SUBROUTINE WMBG()
+!-----------------------------------------------------------------------
+!     Author: Brandon Reichl
+!     Date  : 10/15/2012
+!     This code is meant to be called in w3asim.  It performs the
+!     calculation of the momentum flux budget based on the local wave
+!     field.
+!-----------------------------------------------------------------------
+!     common block variables
+!     ----------------------
+!     GMX - X Momentum
+!     GMY - Y Momentum
+!     GMFXX - X Momentum flux of X momentum
+!     GMFYY - Y Momentum flux of Y momentum
+!     GMFXY - X Momentum flux of Y momentum
+!     GMFYX - Y Momentum flux of X momentum
+!     Vars in womblk.h
+!     yymmddhh, nhours, filename, dtw, w_lon1,w_lon2, w_lat1,w_lat2
+!     o_lon1,o_lon2,o_lat1,o_lat2
+!     dtw-time step of model (for momentum derivative)
+!-----------------------------------------------------------------------
+!     Inputs
+!     ------
+!     GMX0 - Wave momentum (x-dir) from previous time step
+!     GMY0 - idem (y-dir)
+!-----------------------------------------------------------------------
+!     Outputs
+!     -------
+!     TAU_DX - budget term based on momentum uptake by waves (x-dir)
+!     TAU_DY - idem (y-dir)
+!     DENER  - energy budget term
+!-----------------------------------------------------------------------
+!     local variables
+!     TAU_CX - Coriolis-Stokes term based on wave momentum (x-dir)
+!     TAU_CY - idem (y-dir)
+!-----------------------------------------------------------------------
+      USE W3GDATMD, ONLY: NX,NY,SX,SY,MAPSTA,NSEAL,MAPSF,CLATS,DTMAX
+      USE W3ADATMD, ONLY: ITIME
+      USE W3ODATMD, ONLY: IAPROC, NAPROC
+      USE CONSTANTS
+      USE W3CDATMD, ONLY: MX, MY, MX0,MY0, MFXX, MFXY, MFYX, &
+           MFYY, EFX, EFY, ENER, ENER0, TAU_CX, TAU_CY, TAU_DX,&
+           TAU_DY, DENER,ASIM_WBCD
+      IMPLICIT NONE
+      REAL, PARAMETER :: OMEGA=7.2921E-5
+      INTEGER :: IY,IX,JSEA,ISEA
+!Vars for use in calculating derivatives
+      REAL    :: FCOR, DX0, DY0, STX, STY, DX, DY
+      REAL    :: aMX, aMX0, aMY, aMY0
+      INTEGER :: IXP,IXM,IYP,IYM,IXb,IYb,K
+      REAL    :: RAD
+      LOGICAL :: R1, R2
+      INTEGER,SAVE :: ITIME0=0
+!-
+!-1. Set up output variables
+!-
+!      DTMAX = 900.
+!      print*,'ITIME/ITIME0:',ITIME,ITIME0,DTMAX
+      TAU_DX=0.0
+      TAU_DY=0.0
+      TAU_CX=0.0
+      TAU_CY=0.0
+      DENER=0.0
+      ASIM_WBCD=0.0
+!-
+!-2. Calculate time derivative of momentum (backward difference approx)
+!-   We can calculate Coriolis-Stokes term at the same time
+!-
+
+      DO JSEA=1, NSEAL
+         ISEA=IAPROC + (JSEA-1) * NAPROC
+         IX     = MAPSF(ISEA,1)
+         IY     = MAPSF(ISEA,2)
+         IF (MAPSTA(IY,IX).NE.0) THEN
+              FCOR=2*OMEGA*(SQRT(1.-CLATS(IY)**2))
+              IF (IX<NX) THEN 
+                IF (MAPSTA(IY,IX+1).EQ.0) THEN
+                 IXP = IX
+                ELSE
+                 IXP = IX+1
+                ENDIF
+              ELSE 
+                IXP = IX
+              ENDIF 
+              IF (IX>1) THEN 
+                IF (MAPSTA(IY,IX-1).EQ.0) THEN
+                 IXM = IX
+                ELSE
+                 IXM = IX-1
+                ENDIF
+              ELSE
+                 IXM = IX
+              ENDIF
+              IF (IY< NY) THEN 
+                IF (MAPSTA(IY+1,IX).EQ.0)THEN
+                 IYP = IY
+                ELSE
+                 IYP = IY+1
+                ENDIF
+              ELSE
+                 IYP = IY
+              ENDIF
+              IF (IY>1) THEN 
+                IF (MAPSTA(IY-1,IX).EQ.0) THEN
+                 IYM = IY
+                ELSE
+                 IYM = IY-1
+                ENDIF
+              ELSE 
+                IYM = IY
+              ENDIF
+              aMX = 0.0
+              aMX0 = 0.0
+              aMY = 0.0
+              aMY0 = 0.0
+              K = 0
+              DO IXb=IXM,IXP
+                 DO IYb=IYM,IYP
+                    K = K + 1
+                    aMX=aMX+MX(IYb,IXb)
+                    aMY=aMY+MY(IYb,IXb)
+                    aMX0=aMX0+(MX0(IYb,IXb))
+                    aMY0=aMY0+(MY0(IYb,IXb))
+                 ENDDO
+              ENDDO
+              TAU_DX(IY,IX)=(aMX/REAL(K)-aMX0/REAL(K))/&
+                   (DTMAX*max(1.,REAL(ITIME-ITIME0)))
+              TAU_DY(IY,IX)=(aMY/REAL(K)-aMY0/REAL(K))/&
+                   (DTMAX*max(1.,REAL(ITIME-ITIME0)))
+!              TAU_CX(IY,IX)=FCOR*MY(IY,IX)
+!              TAU_CY(IY,IX)=-FCOR*MX(IY,IX)
+              TAU_CX(IY,IX)= (aMX/REAL(K)-aMX0/REAL(K))/DTMAX
+              TAU_CY(IY,IX)= (aMY/REAL(K)-aMY0/REAL(K))/DTMAX
+              DENER(IY,IX)=(ENER(IY,IX)-ENER0(IY,IX))/&
+                   (DTMAX*max(1.,REAL(ITIME-ITIME0)))
+           ENDIF
+        ENDDO
+!-
+!-3. Calculate spatial derivatives of momentum flux (central diff
+!-   if possible)
+!-
+      DX0=SX*DERA*RADIUS
+      DY0=SY*DERA*RADIUS
+      DO JSEA = 1 , NSEAL
+        ISEA = IAPROC + (JSEA-1) * NAPROC
+        IX     = MAPSF(ISEA,1)
+        IY     = MAPSF(ISEA,2)
+        IF (MAPSTA(IY,IX) .NE. 0) THEN
+           STX=2.0
+           IF (IX < NX) THEN 
+             IF (MAPSTA(IY,IX+1).EQ.0) THEN
+               IXP = IX
+               STX=1.0
+             ELSE
+               IXP=IX+1
+             ENDIF
+           ELSE 
+             IXP = IX
+             STX=1.0
+           ENDIF
+           IF (IX > 1) THEN 
+             IF (MAPSTA(IY,IX-1).EQ.0) THEN
+               IXM=IX
+               STX=1.0
+             ELSE
+               IXM=IX-1
+             ENDIF
+           ELSE 
+             IXM=IX
+             STX=1.0
+           ENDIF 
+           STY=2.0
+           IF (IY < NY) THEN 
+             IF (MAPSTA(IY+1,IX).EQ.0)THEN
+               IYP = IY
+               STY=1.0
+             ELSE
+               IYP=IY+1
+             ENDIF 
+           ELSE 
+             IYP = IY
+             STY=1.0
+           ENDIF
+           IF (IY > 1) THEN 
+             IF (MAPSTA(IY-1,IX).EQ.0) THEN
+               IYM=IY
+               STX=1.0
+             ELSE
+               IYM=IY-1
+             ENDIF
+           ELSE
+             IYM=IY
+             STX=1.0
+           ENDIF 
+           DX=DX0*STX*CLATS(IY)
+           DY=DY0*STY
+           TAU_DX(IY,IX)=TAU_DX(IY,IX)+(MFXX(IY,IXP)-MFXX(IY,IXM))/DX + &
+                (MFXY(IYP,IX)-MFXY(IYM,IX))/DY
+           TAU_DY(IY,IX)=TAU_DY(IY,IX)+(MFYY(IYP,IX)-MFYY(IYM,IX))/DY + &
+               (MFYX(IY,IXP)-MFYX(IY,IXM))/DX
+           DENER(IY,IX)=DENER(IY,IX)+(EFX(IY,IXP)-EFX(IY,IXM))/DX + &
+                (EFY(IYP,IX)-EFY(IYM,IX))/DY
+!           ASIM_WBCD(IY,IX) = (MX(IY,IXP)-MX(IY,IXM))/DX + &
+!                 (MY(IYP,IX)-MY(IYM,IX))/DY
+           ASIM_WBCD(IY,IX) = 0.0
+           !/ Quality Control
+           TAU_DX(IY,IX)=MAX(MIN(TAU_DX(IY,IX),2.5),-2.5)
+           TAU_DY(IY,IX)=MAX(MIN(TAU_DY(IY,IX),2.5),-2.5)
+           TAU_CX(IY,IX)=MAX(MIN(TAU_CX(IY,IX),2.5),-2.5)
+           TAU_CY(IY,IX)=MAX(MIN(TAU_CY(IY,IX),2.5),-2.5)
+           DENER(IY,IX)=MAX(MIN(DENER(IY,IX),150.),-150.)
+           IF (.NOT.ABS(TAU_DX(IY,IX).LT.2.5)) THEN
+              TAU_DX(IY,IX)=0.0
+           ENDIF
+           IF (.NOT.ABS(TAU_DY(IY,IX).LT.2.5)) THEN
+              TAU_DY(IY,IX)=0.0
+           ENDIF
+           IF (.NOT.ABS(TAU_CX(IY,IX).LT.2.5)) THEN
+              TAU_CX(IY,IX)=0.0
+           ENDIF
+           IF (.NOT.ABS(TAU_CY(IY,IX).LT.2.5)) THEN
+              TAU_CY(IY,IX)=0.0
+           ENDIF
+           IF (.NOT.ABS(DENER(IY,IX).LE.150.)) THEN
+              DENER(IY,IX)=0.0
+           ENDIF
+        ENDIF
+      ENDDO
+      ITIME0=ITIME
+      END SUBROUTINE WMBG
+      END MODULE W3MFBGMD
+
+
