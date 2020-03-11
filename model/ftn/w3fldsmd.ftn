@@ -7,7 +7,7 @@
 !/                  |           H. L. Tolman            |
 !/                  |            A. Chawla              |
 !/                  |                        FORTRAN 90 |
-!/                  | Last update :         05-Jun-2018 |
+!/                  | Last update :         24-Apr-2015 |
 !/                  +-----------------------------------+
 !/
 !/    30-Nov-1999 : Upgrade to FORTRAN 90               ( version 2.00 )
@@ -31,8 +31,6 @@
 !/     5-Mar-2012 : Cleanup of tidal analysis           ( version 4.09 ) 
 !/    24-Apr-2015 : Adding OASIS coupling calls         ( version 5.07 )
 !/                  (M. Accensi & F. Ardhuin, IFREMER)
-!/    20-Jan-2017 : Update to new W3GSRUMD APIs         ( version 6.02 )
-!/    05-Jun-2018 : adds DEBUGFLS                       ( version 6.04 )
 !/
 !/    Copyright 2009-2012 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -195,7 +193,6 @@
 !/
 !/S      USE W3SERVMD, ONLY: STRACE
 !
-!/DEBUGFLS      USE W3ODATMD, only : IAPROC
       IMPLICIT NONE
 !/
 !/ ------------------------------------------------------------------- /
@@ -324,24 +321,18 @@
 !
 ! Open file ---------------------------------------------------------- *
 !
-!/DEBUGFLS       WRITE(740+IAPROC,*) 'W3FLDSMD 1 : WRITE=', WRITE
       IF ( WRITE ) THEN
-!/DEBUGFLS       WRITE(740+IAPROC,*) 'W3FLDSMD 2 : WRITE=', WRITE
           IF ( PRESENT(FPRE) ) THEN
-!/DEBUGFLS       WRITE(740+IAPROC,*) '1 : W3FLDSMD FNAME=', FNAME(:I)
               OPEN (NDS,FILE=FPRE//FNAME(:I),FORM=FORM,ERR=803,       &
                     IOSTAT=IERR)
-          ELSE
-!/DEBUGFLS       WRITE(740+IAPROC,*) '2 : W3FLDSMD FNAME=', FNAME(:I)
+            ELSE
               OPEN (NDS,FILE=FNAME(:I),FORM=FORM,ERR=803,IOSTAT=IERR)
             END IF
         ELSE
           IF ( PRESENT(FPRE) ) THEN
-!/DEBUGFLS       WRITE(740+IAPROC,*) '3 : W3FLDSMD FNAME=', FNAME(:I)
               OPEN (NDS,FILE=FPRE//FNAME(:I),FORM=FORM,               &
                     STATUS='OLD',ERR=803,IOSTAT=IERR)
-          ELSE
-!/DEBUGFLS       WRITE(740+IAPROC,*) '4 : W3FLDSMD FNAME=', FNAME(:I)
+            ELSE
               OPEN (NDS,FILE=FNAME(:I),FORM=FORM,                     &
                     STATUS='OLD',ERR=803,IOSTAT=IERR)
             END IF
@@ -349,7 +340,6 @@
 !
 ! Process test data -------------------------------------------------- *
 !
-!/DEBUGFLS       WRITE(740+IAPROC,*) 'WRITE=', WRITE
       IF ( WRITE ) THEN
           IF ( FDHDR ) THEN
              IF ( FORM .EQ. 'UNFORMATTED' ) THEN
@@ -368,19 +358,10 @@
           IF ( FORM .EQ. 'UNFORMATTED' ) THEN
               READ (NDS,END=806,ERR=805,IOSTAT=IERR)                  &
                     TSSTR, TSFLD, NXT, NYT, GTYPET, FILLER(1:2), TIDEFLAG
-!/DEBUGFLS       WRITE(740+IAPROC,*) '1: NXT=', NXT, ' NYT=', NYT
-!/DEBUGFLS       WRITE(740+IAPROC,*)            '1: TSSTR=', TSSTR
-!/DEBUGFLS       WRITE(740+IAPROC,*)            '1: TSFLD=', TSFLD
-!/DEBUGFLS       WRITE(740+IAPROC,*)            '1: NXT=', NXT, ' NYT=', NYT
-!/DEBUGFLS       WRITE(740+IAPROC,*)            '1: GTYPET=', GTYPET
-!/DEBUGFLS       WRITE(740+IAPROC,*)            '1: FILLER=', FILLER
-!/DEBUGFLS       WRITE(740+IAPROC,*)            '1: TIDEFLAG=', TIDEFLAG
-          ELSE
+            ELSE
               READ (NDS,900,END=806,ERR=805,IOSTAT=IERR)              &
                     TSSTR, TSFLD, NXT, NYT, GTYPET, FILLER(1:2), TIDEFLAG
-!/DEBUGFLS       WRITE(740+IAPROC,*) '2: NXT=', NXT, ' NYT=', NYT
-!/DEBUGFLS       WRITE(740+IAPROC,*) '2: NXT=', NXT, ' NYT=', NYT
-          END IF
+            END IF
           IF ((FILLER(1).NE.0.OR.FILLER(2).NE.0).AND.TIDEFLAG.GE.0) TIDEFLAG=0
           IF (TIDEFLAG.NE.0.AND.(.NOT.TIDEOK)) THEN     
             GOTO 810
@@ -395,9 +376,6 @@
           IF ( IDFLD .NE. TSFLD ) GOTO 808
           IF ( IDFLD(1:2) .NE. 'DT' ) THEN
             IF ( NX.NE.NXT .OR. NY.NE.NYT ) THEN 
-!/DEBUGFLS       WRITE(740+IAPROC,*) 'Dimension error'
-!/DEBUGFLS       WRITE(740+IAPROC,*) 'NX =', NX , ' NY =', NY
-!/DEBUGFLS       WRITE(740+IAPROC,*) 'NXT=', NXT, ' NYT=', NYT
               GOTO 809
             ELSE
               NX     = NXT
@@ -472,7 +450,7 @@
 !
 ! Formats
 !
-  900 FORMAT (1X,A13,1X,A3,6I12)
+  900 FORMAT (1X,A13,1X,A3,3I12)
 !
  1001 FORMAT (/' *** WAVEWATCH III ERROR IN W3FLDO : '/         &
                '     ILLEGAL INXOUT STRING : ',A/)
@@ -494,11 +472,11 @@
                '     ILLEGAL FIELD ID STRING >',A,'<'/          &
                '                   SHOULD BE >',A,'<'/)
  1009 FORMAT (/' *** WAVEWATCH III ERROR IN W3FLDO : '/         &
-         '     INCOMPATIBLE GRID DATA : ',3(1X,I10)/             &
-         '                  SHOULD BE : ',3(1X,I10)/)            
+         '     INCOMPATIBLE GRID DATA : ',3(1X,I4)/             &
+         '                  SHOULD BE : ',3(1X,I4)/)            
  1010 FORMAT (/' *** WAVEWATCH III ERROR IN W3FLDO : '/          &
          '     FILLER indicates use of tidal constituents',3I4, /&
-         '     For this the code should be compiled with TIDE switch'/)
+         '     For this the code should be compiled with TIDE switch'/)            
 !
 !/T 9000 FORMAT (' TEST W3FLDO : INXOUT : ',A/                     &
 !/T              '               IDFLD  : ',A/                     &
@@ -901,8 +879,8 @@
                '     ERROR IN READING ',A,' FILE, IOSTAT =',I6/)
  1006 FORMAT (/' *** WAVEWATCH III ERROR IN W3FLDTIDE2 : '/         &
                '     PREMATURE END OF ',A,' FILE'/)
-!/TIDE 1007 FORMAT (/' *** WAVEWATCH III ERROR IN W3FLDTIDE2 : '/         &
-!/TIDE               '     TIDAL CONSTITUENTS NOT RECOGNIZED ',A /)
+ 1007 FORMAT (/' *** WAVEWATCH III ERROR IN W3FLDTIDE2 : '/         &
+               '     TIDAL CONSTITUENTS NOT RECOGNIZED ',A /)
 !/
 !/ End of W3FLDO  ---------------------------------------------------- /
 !/
@@ -911,7 +889,7 @@
 !/ ------------------------------------------------------------------- /
       SUBROUTINE W3FLDG (INXOUT, IDFLD, NDS, NDST, NDSE, MX, MY,      &
                          NX, NY, T0, TN, TF0, FX0, FY0, FA0,          &
-                         TFN, FXN, FYN, FAN, IERR, FLAGSC             &
+                         TFN, FXN, FYN, FAN, IERR                     &
 !/OASIS                  , COUPL_COMM                                 &
                          )
 !/
@@ -974,8 +952,6 @@
 !                           5 : Error in reading time.
 !                           6 : Premature EOF reading field.
 !                           7 : Error reading field.
-!       FLAGSC  Log.  I/O  Flag for coupling field
-!       COUPL_COMM Int. I  MPI communicator for coupling
 !     ----------------------------------------------------------------
 !
 !  4. Subroutines used :
@@ -1023,7 +999,6 @@
 !/OASIS      USE W3OACPMD, ONLY: ID_OASIS_TIME
 !/OASACM      USE W3AGCMMD, ONLY: RCV_FIELDS_FROM_ATMOS
 !/OASOCM      USE W3OGCMMD, ONLY: RCV_FIELDS_FROM_OCEAN
-!/OASICM      USE W3IGCMMD, ONLY: RCV_FIELDS_FROM_ICE
 !/OASIS       USE W3ODATMD, ONLY: DTOUT 
       IMPLICIT NONE
 !/
@@ -1039,7 +1014,6 @@
                                       FA0(MX,MY), FAN(MX,MY)
       CHARACTER, INTENT(IN)        :: INXOUT*(*)
       CHARACTER(LEN=3), INTENT(IN) :: IDFLD
-      LOGICAL, INTENT(INOUT), OPTIONAL        :: FLAGSC
 !/OASIS      INTEGER, INTENT(IN), OPTIONAL :: COUPL_COMM
 
 !/
@@ -1050,8 +1024,7 @@
 !/S      INTEGER, SAVE           :: IENT = 0
       REAL                    :: DTTST
       LOGICAL                 :: WRITE, FL2D, FLFRST, FLBE, FLST,    &
-                                 FLINTERP, FLCOUPL
-      LOGICAL, PARAMETER      :: FLAGSC_DEFAULT = .FALSE.
+                                 FLINTERP
 !/
 !/ ------------------------------------------------------------------- /
 !/
@@ -1081,12 +1054,6 @@
       FLBE   = IDFLD.EQ.'ISI'       
       FLST   = IDFLD.EQ.'WNS' 
 
-      IF ( .NOT. PRESENT(FLAGSC) ) THEN
-        FLCOUPL=FLAGSC_DEFAULT
-      ELSE
-        FLCOUPL=FLAGSC
-      END IF
-
 ! this flag is necessary to define the field at the start and end time
 ! of integration for the first time step which is integrated on 0
 ! to be able to output integrated variables like cha, ust, taw
@@ -1095,7 +1062,8 @@
 
 ! if the model is coupled, no interpolation in time must be done
 
-      IF (FLCOUPL) FLINTERP = .FALSE.
+!/OASACM  FLINTERP = IDFLD.EQ.'CUR'
+!/OASOCM  FLINTERP = IDFLD.EQ.'WND' .OR. IDFLD.EQ.'WNS'
 
       FLFRST = TFN(1) .EQ. -1
 !
@@ -1112,8 +1080,8 @@
             TF0(1) = TFN(1)
             TF0(2) = TFN(2)
 !/T            WRITE (NDST,9020)
-! unless TFN has been changed in the do loop, the following line is essentally 
-!       "if not.flfrst"
+ ! unless TFN has been changed in the do loop, the following line is essentally 
+ !       "if not.flfrst"
             IF ( TFN(1) .NE. -1 ) THEN
                 DO IX=1, NX
                   DO IY=1, NY
@@ -1161,26 +1129,19 @@
 !
           ELSE
 !
-!/OASIS            IF (FLCOUPL) THEN 
-!/OASIS  ! Do not receive coupling fields at the end of the first integration time in case of  
-!/OASIS  ! forcing with a non interpolated field (like lev, ice, ...)
-!/OASIS              IF ((ID_OASIS_TIME.EQ.0 .AND. FLFRST) .OR. (ID_OASIS_TIME.GT.0)) THEN
+!/OASIS            IF (ID_OASIS_TIME.GE.0) THEN 
 !
 !/OASACM ! Getting U10 (FXN) and V10 (FYN) from atmospheric model
-!/OASACM                CALL RCV_FIELDS_FROM_ATMOS(COUPL_COMM,          &
-!/OASACM                                           IDFLD, FXN, FYN, FAN)
+!/OASACM              CALL RCV_FIELDS_FROM_ATMOS(COUPL_COMM,          &
+!/OASACM                                         IDFLD, FXN, FYN, FAN)
 !/OASOCM ! Getting UCUR (CX), VCUR (CY), WLV from ocean model
-!/OASOCM                CALL RCV_FIELDS_FROM_OCEAN(COUPL_COMM,          &
-!/OASOCM                                           IDFLD, FXN, FYN, FAN)
-!/OASICM ! Getting ICEF from ice model
-!/OASICM                CALL RCV_FIELDS_FROM_ICE(COUPL_COMM,            &
-!/OASICM                                         IDFLD, FXN, FYN, FAN)
-
-!/OASIS  ! Increment the time field TFN to the next coupling time
-!/OASIS                TFN(1)=T0(1)
-!/OASIS                TFN(2)=T0(2)
-!/OASIS                CALL TICK21(TFN,DTOUT(7))
-!/OASIS              END IF
+!/OASOCM              CALL RCV_FIELDS_FROM_OCEAN(COUPL_COMM,          &
+!/OASOCM                                         IDFLD, FXN, FYN, FAN)
+!/OASIS ! Increment the time field TFN to the next coupling time
+!/OASIS              TFN(1)=T0(1)
+!/OASIS              TFN(2)=T0(2)
+!/OASIS              CALL TICK21(TFN,DTOUT(7))
+!
 !/OASIS            ELSE 
               READ (NDS,END=800,ERR=805,IOSTAT=ISTAT) TFN
 !/T             WRITE (NDST,9031) TFN
@@ -1343,8 +1304,8 @@
 !/T 9000 FORMAT (' TEST W3FLDG : INXOUT     : ',A/                    &
 !/T              '               IDFLD      : ',A/                    &
 !/T              '               NDS(T/E)   :',3I4/                   &
-!/T              '               MX, MY     :',2I8/                   &
-!/T              '               NX, NY     :',2I8/                   &
+!/T              '               MX, MY     :',2I4/                   &
+!/T              '               NX, NY     :',2I4/                   &
 !/T              '               TF0        :',I9.8,I7.6/             &
 !/T              '               TFN        :',I9.8,I7.6/             &
 !/T              '               IERR       :',I4)
@@ -1645,7 +1606,6 @@
 !/    30-Nov-1999 : Upgrade to FORTRAN 90               ( version 2.00 )
 !/    30-Oct-2009 : Implement curvilinear grid type.    ( version 3.14 )
 !/                  (W. E. Rogers & T. J. Campbell, NRL)
-!/    20-Jan-2017 : Update to new W3GSRUMD APIs         ( version 6.02 )
 !/
 !  1. Purpose :
 !
@@ -1843,7 +1803,7 @@
 !
       PLAT => ALAT
       PLON => ALON
-      GSU = W3GSUC( .TRUE., FLAGLL, ICLO, PLON, PLAT )
+      GSU = W3GSUC( .TRUE., FLAGLL, ICLO, MXI, MYI, PLON, PLAT )
 !
 !/T      WRITE (NDST,9001)
 !/T      CALL W3GSUP( GSU, NDST )
@@ -1865,7 +1825,7 @@
 !
               NNBR = NNBR_MAX
               INGRID = W3GRMP( GSU, X, Y, II, JJ, RR, &
-                       MASK=LMSK, MSKC=MSKC, NNBR=NNBR, DEBUG=LDBG )
+                               LMSK, MSKC, NNBR, LDBG )
 !
               IF ( INGRID ) THEN
 !
@@ -2009,7 +1969,6 @@
 !/    30-Nov-1999 : Upgrade to FORTRAN 90               ( version 2.00 )
 !/    04-Sep-2003 : Bug fix par. list declaration.      ( version 3.04 )
 !/    05-Jul-2005 : Correct first level/ice.            ( version 3.07 )
-!/    15-May-2018 : Allow homog ice.                    ( version 6.05 )
 !/
 !  1. Purpose :
 !
@@ -2037,8 +1996,6 @@
 !                           1 : water levels
 !                           2 : currents
 !                           3 : winds
-!                           4 : ice
-!                           8 : moving grid
 !       NDST    Int.   I   Unit number test output.
 !       NDSE    Int.   I   Unit number error messages.
 !                          (No output if NDSE < 0).
@@ -2108,9 +2065,9 @@
 !/
       INTEGER, INTENT(IN)     :: J, NDST, NDSE, MX, MY, NX, NY,       &
                                  T0(2), TN(2), NHM
-      INTEGER, INTENT(INOUT)  :: NH, THO(2,-7:8,NHM), TF0(2), TFN(2)
+      INTEGER, INTENT(INOUT)  :: NH, THO(2,-7:4,NHM), TF0(2), TFN(2)
       INTEGER, INTENT(OUT)    :: IERR
-      REAL, INTENT(INOUT)     :: HA(NHM,-7:8), HD(NHM,-7:8), HS(NHM,-7:8),  &
+      REAL, INTENT(INOUT)     :: HA(NHM,-7:4), HD(NHM,-7:4), HS(NHM,-7:4),  &
                                  FX0(MX,MY), FY0(MX,MY), FS0(MX,MY),  &
                                  FXN(MX,MY), FYN(MX,MY), FSN(MX,MY)
 !/
@@ -2136,7 +2093,8 @@
 !
 ! Test field ID number for validity
 !
-      IF ( J.LT.-7 .OR. J .GT.8 ) GOTO 801
+!old: IF ( J.LE.0 .OR. J .GT.3 ) GOTO 801
+      IF ( J.LT.-7 .OR. J .GT.3 ) GOTO 801
       FLFRST = TFN(1) .EQ. -1
 !
 !/T      WRITE (NDST,9001) FLFRST
@@ -2177,16 +2135,17 @@
         IF ( NH .NE. 0. ) THEN
             TFN(1) = THO(1,J,1)
             TFN(2) = THO(2,J,1)
-! ic* md* lev ice
-            IF ( ( J.LE.1 ) .OR. ( J.EQ.4) ) THEN
+!
+            IF ( J.GE.(-7).AND.(J.LE.1)) THEN
                 DO IX=1, NX
                   DO IY=1, NY
-                    FSN(IX,IY) = HA(1,J)
+                    FSN(IX,IY) = HS(1,J)
+
                     END DO
                   END DO
-!/T                WRITE (NDST,9050) HA(1,J)
+!/T                WRITE (NDST,9050) HS(1,J)
               END IF
-! cur
+!
             IF ( J .EQ. 2 ) THEN
                 DIR    = ( 270. - HD(1,J) ) * DERA
                 X      = HA(1,J) * COS(DIR)
@@ -2199,7 +2158,7 @@
                   END DO
 !/T                WRITE (NDST,9050) X, Y
               END IF
-! wnd
+!
             IF ( J .EQ. 3 ) THEN
                 DIR    = ( 270. - HD(1,J) ) * DERA
                 X      = HA(1,J) * COS(DIR)
@@ -2238,17 +2197,9 @@
 !
 ! Check time
 !
-
-          DTTST  = DSEC21 ( T0 , TFN )
-
-          ! exit if field time is later than run time
-          IF ( DTTST .GT. 0. ) EXIT
-          ! exit if field is ic* or md* or lev or ice
-          ! and first forcing field has been stored 
-          ! at start run time
-          IF ( J.LE.(1).OR.(J.EQ.4) ) THEN
-            IF (FLFRST .AND. DTTST.EQ.0. ) EXIT
-          END IF
+        DTTST  = DSEC21 ( T0 , TFN )
+        IF ( J.GE.(-7).AND.(J.LE.1).AND.FLFRST .AND. DTTST.EQ.0. ) EXIT
+        IF ( DTTST .GT. 0. ) EXIT
         END DO
 !
 ! Check if first field
@@ -2401,9 +2352,9 @@
 !/ Parameter list
 !/
       INTEGER, INTENT(IN)     :: J, NDST, NDSE, T0(2), TN(2), NHM
-      INTEGER, INTENT(INOUT)  :: NH, THO(2,-7:8,NHM), TF0(2), TFN(2)
+      INTEGER, INTENT(INOUT)  :: NH, THO(2,-7:4,NHM), TF0(2), TFN(2)
       INTEGER, INTENT(OUT)    :: IERR
-      REAL, INTENT(INOUT)     :: HA(NHM,-7:8), HD(NHM,-7:8), A0, AN, D0, DN
+      REAL, INTENT(INOUT)     :: HA(NHM,-7:4), HD(NHM,-7:4), A0, AN, D0, DN
 !/
 !/ ------------------------------------------------------------------- /
 !/ Local parameters
